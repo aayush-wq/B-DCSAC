@@ -1,0 +1,17 @@
+{
+  "name": "bdcsac",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "compile": "node scripts/compile.js",
+    "benchmark": "node scripts/benchmark.js",
+    "demo": "node gateway/demo.js",
+    "edge-cases": "node gateway/edge-cases.js",
+    "scaling": "node gateway/scaling-and-reuse.js"
+  },
+  "dependencies": {
+    "ethers": "^6.0.0",
+    "ganache": "^7.0.0",
+    "solc": "0.8.20"
+  }
+}

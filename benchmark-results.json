@@ -1,0 +1,39 @@
+{
+  "engine": "ganache (npm)",
+  "timestamp": "2026-06-30T04:20:58.966Z",
+  "results": [
+    {
+      "Function": "deployContract",
+      "Gas Used": "750978"
+    },
+    {
+      "Function": "registerObject",
+      "Gas Used": "134946"
+    },
+    {
+      "Function": "grantAccess (READ, no expiry)",
+      "Gas Used": "123294"
+    },
+    {
+      "Function": "grantAccess (WRITE, with expiry)",
+      "Gas Used": "126142"
+    },
+    {
+      "Function": "checkAccess (granted)",
+      "Gas Used": "34894"
+    },
+    {
+      "Function": "revokeAccess",
+      "Gas Used": "51076"
+    },
+    {
+      "Function": "checkAccess (revoked, denied)",
+      "Gas Used": "34728"
+    },
+    {
+      "Function": "hasAccess (view/eth_call)",
+      "Gas Used": "0 (view fn, off-chain)",
+      "Note": "result=true"
+    }
+  ]
+}
