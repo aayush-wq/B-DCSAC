@@ -1,39 +1,58 @@
 {
   "engine": "ganache (npm)",
-  "timestamp": "2026-06-30T04:20:58.966Z",
+  "timestamp": "2026-06-30T08:56:55.223Z",
   "results": [
     {
       "Function": "deployContract",
-      "Gas Used": "750978"
+      "Gas Used": "1184233"
     },
     {
       "Function": "registerObject",
-      "Gas Used": "134946"
+      "Gas Used": "134957"
     },
     {
       "Function": "grantAccess (READ, no expiry)",
-      "Gas Used": "123294"
+      "Gas Used": "123316"
     },
     {
       "Function": "grantAccess (WRITE, with expiry)",
-      "Gas Used": "126142"
+      "Gas Used": "126164"
     },
     {
       "Function": "checkAccess (granted)",
-      "Gas Used": "34894"
+      "Gas Used": "34916"
     },
     {
       "Function": "revokeAccess",
-      "Gas Used": "51076"
+      "Gas Used": "51098"
     },
     {
       "Function": "checkAccess (revoked, denied)",
-      "Gas Used": "34728"
+      "Gas Used": "34750"
     },
     {
       "Function": "hasAccess (view/eth_call)",
       "Gas Used": "0 (view fn, off-chain)",
       "Note": "result=true"
     }
-  ]
+  ],
+  "extendedFunctions": [
+    {
+      "Function": "registerUser",
+      "Gas Used": "91439"
+    },
+    {
+      "Function": "assignRole",
+      "Gas Used": "48330"
+    },
+    {
+      "Function": "updatePolicy",
+      "Gas Used": "72719"
+    },
+    {
+      "Function": "logAccess",
+      "Gas Used": "112764"
+    }
+  ],
+  "note": "Core results[] covers registerObject/grantAccess/revokeAccess/checkAccess (the original gateway-facing functions). extendedFunctions[] covers registerUser/assignRole/updatePolicy/logAccess, added specifically to give every row of the paper's Table 5 a real measured value instead of an analytical estimate."
 }

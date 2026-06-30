@@ -34,6 +34,20 @@ contract BDCSAC_AccessControl {
     }
 
     uint256 private objectCounter;
+    address public immutable admin; // deployer; used for assignRole authorization
+
+    struct UserRecord {
+        bytes32 didHash;
+        bytes32 publicKeyHash;
+        bool registered;
+    }
+
+    struct AuditEntry {
+        uint256 objectId;
+        address requester;
+        bool decision;
+        uint256 timestamp;
+    }
 
     mapping(uint256 => ObjectRecord) public objects;                 // objectId => record
     mapping(uint256 => mapping(address => Grant)) private grants;    // objectId => subject => grant
@@ -47,10 +61,24 @@ contract BDCSAC_AccessControl {
     // (3.2x). This mapping makes every grantAccess call O(1) regardless of how many
     // grantees an object already has.
 
+    mapping(address => UserRecord) public users;          // addr => identity record
+    mapping(address => uint8) public roles;                // addr => role ID (admin-assigned)
+    mapping(uint256 => uint256) public policyVersion;       // objectId => current policy version
+    mapping(uint256 => bytes32) public policyHash;          // objectId => current policy digest
+    AuditEntry[] private auditLog;                          // append-only audit trail (separate from event logs)
+
+    constructor() {
+        admin = msg.sender;
+    }
+
     event ObjectRegistered(uint256 indexed objectId, address indexed owner, bytes32 contentHash, uint256 timestamp);
     event AccessGranted(uint256 indexed objectId, address indexed owner, address indexed subject, Permission permission, uint256 expiresAt);
     event AccessRevoked(uint256 indexed objectId, address indexed owner, address indexed subject);
     event AccessChecked(uint256 indexed objectId, address indexed subject, bool granted);
+    event UserRegistered(address indexed addr, bytes32 didHash, bytes32 publicKeyHash, uint256 timestamp);
+    event RoleAssigned(address indexed addr, uint8 role, address indexed assignedBy);
+    event PolicyUpdated(uint256 indexed objectId, bytes32 newPolicyHash, uint256 newVersion);
+    event AccessLogged(uint256 indexed objectId, address indexed requester, bool decision, uint256 timestamp);
 
     modifier onlyOwner(uint256 objectId) {
         require(objects[objectId].exists, "BDCSAC: object does not exist");
@@ -155,5 +183,68 @@ contract BDCSAC_AccessControl {
 
     function totalObjects() external view returns (uint256) {
         return objectCounter;
+    }
+
+    /**
+     * @notice Binds a blockchain address to an off-chain identity digest and
+     *         public key hash. Mirrors Table 5's registerUser row in the paper
+     *         (sign-up / identity-binding step prior to role assignment).
+     */
+    function registerUser(address addr, bytes32 didHash, bytes32 publicKeyHash) external {
+        require(addr != address(0), "BDCSAC: invalid address");
+        users[addr] = UserRecord({ didHash: didHash, publicKeyHash: publicKeyHash, registered: true });
+        emit UserRegistered(addr, didHash, publicKeyHash, block.timestamp);
+    }
+
+    /**
+     * @notice Admin-only role assignment, mirrors Table 5's assignRole row.
+     *         Role IDs are application-defined (e.g. 0=user, 1=auditor, 2=admin).
+     */
+    function assignRole(address addr, uint8 role) external {
+        require(msg.sender == admin, "BDCSAC: only admin can assign roles");
+        require(users[addr].registered, "BDCSAC: user not registered");
+        roles[addr] = role;
+        emit RoleAssigned(addr, role, msg.sender);
+    }
+
+    /**
+     * @notice Updates an object's policy digest and increments its policy
+     *         version, mirrors Table 5's updatePolicy row. A version bump
+     *         is what the paper's token-based model uses to invalidate
+     *         previously issued access tokens after a policy change.
+     */
+    function updatePolicy(uint256 objectId, bytes32 newPolicyHash) external onlyOwner(objectId) {
+        policyHash[objectId] = newPolicyHash;
+        policyVersion[objectId] += 1;
+        emit PolicyUpdated(objectId, newPolicyHash, policyVersion[objectId]);
+    }
+
+    /**
+     * @notice Standalone immutable audit-log write, mirrors Table 5's logAccess
+     *         row. Distinct from checkAccess: checkAccess validates AND emits
+     *         a lightweight event in one call (what the gateway uses in
+     *         practice for efficiency); logAccess is the explicit storage-array
+     *         audit write described separately in the paper's Section 8 design,
+     *         benchmarked here as its own function so its gas cost isn't
+     *         conflated with validation.
+     */
+    function logAccess(uint256 objectId, bool decision) external returns (uint256 logIndex) {
+        auditLog.push(AuditEntry({
+            objectId: objectId,
+            requester: msg.sender,
+            decision: decision,
+            timestamp: block.timestamp
+        }));
+        logIndex = auditLog.length - 1;
+        emit AccessLogged(objectId, msg.sender, decision, block.timestamp);
+    }
+
+    function getAuditEntry(uint256 logIndex) external view returns (uint256 objectId, address requester, bool decision, uint256 timestamp) {
+        AuditEntry memory e = auditLog[logIndex];
+        return (e.objectId, e.requester, e.decision, e.timestamp);
+    }
+
+    function auditLogLength() external view returns (uint256) {
+        return auditLog.length;
     }
 }

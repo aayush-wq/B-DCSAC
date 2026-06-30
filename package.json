@@ -7,7 +7,9 @@
     "benchmark": "node scripts/benchmark.js",
     "demo": "node gateway/demo.js",
     "edge-cases": "node gateway/edge-cases.js",
-    "scaling": "node gateway/scaling-and-reuse.js"
+    "scaling": "node gateway/scaling-and-reuse.js",
+    "benchmark-extended": "node scripts/benchmark-extended.js",
+    "edge-cases-extended": "node gateway/edge-cases-extended.js"
   },
   "dependencies": {
     "ethers": "^6.0.0",
