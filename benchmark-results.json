@@ -1,58 +1,132 @@
 {
-  "engine": "ganache (npm)",
-  "timestamp": "2026-06-30T08:56:55.223Z",
-  "results": [
-    {
-      "Function": "deployContract",
-      "Gas Used": "1184233"
-    },
+  "core": [
     {
       "Function": "registerObject",
-      "Gas Used": "134957"
+      "Gas Used": "227365"
     },
     {
-      "Function": "grantAccess (READ, no expiry)",
-      "Gas Used": "123316"
-    },
-    {
-      "Function": "grantAccess (WRITE, with expiry)",
-      "Gas Used": "126164"
+      "Function": "grantAccess",
+      "Gas Used": "124307"
     },
     {
       "Function": "checkAccess (granted)",
-      "Gas Used": "34916"
+      "Gas Used": "35183"
+    },
+    {
+      "Function": "checkAccess (denied)",
+      "Gas Used": "35044"
     },
     {
       "Function": "revokeAccess",
-      "Gas Used": "51098"
+      "Gas Used": "51815"
     },
     {
-      "Function": "checkAccess (revoked, denied)",
-      "Gas Used": "34750"
+      "Function": "hasAccess (view)",
+      "Gas Used": "0",
+      "Note": "result=false"
     },
     {
-      "Function": "hasAccess (view/eth_call)",
-      "Gas Used": "0 (view fn, off-chain)",
-      "Note": "result=true"
+      "Function": "getObject (view)",
+      "Gas Used": "0",
+      "Note": "owner=0x56e7965aCB814479b242e898d40D72B975cf2E5b"
     }
   ],
-  "extendedFunctions": [
+  "extended": [
     {
       "Function": "registerUser",
-      "Gas Used": "91439"
+      "Gas Used": "92230"
     },
     {
       "Function": "assignRole",
-      "Gas Used": "48330"
+      "Gas Used": "48761"
+    },
+    {
+      "Function": "registerObject",
+      "Gas Used": "227365"
     },
     {
       "Function": "updatePolicy",
-      "Gas Used": "72719"
+      "Gas Used": "56443"
     },
     {
       "Function": "logAccess",
-      "Gas Used": "112764"
+      "Gas Used": "113846"
+    },
+    {
+      "Function": "getAuditEntry (view)",
+      "Gas Used": "0",
+      "Note": "decision=true"
+    },
+    {
+      "Function": "auditLogLength (view)",
+      "Gas Used": "0",
+      "Note": "length=1"
     }
   ],
-  "note": "Core results[] covers registerObject/grantAccess/revokeAccess/checkAccess (the original gateway-facing functions). extendedFunctions[] covers registerUser/assignRole/updatePolicy/logAccess, added specifically to give every row of the paper's Table 5 a real measured value instead of an analytical estimate."
+  "tokenModel": [
+    {
+      "Function": "issueToken",
+      "Gas Used": "194572"
+    },
+    {
+      "Function": "consumeToken",
+      "Gas Used": "61013"
+    },
+    {
+      "Function": "revokeToken",
+      "Gas Used": "52160"
+    },
+    {
+      "Function": "isTokenValid (view/eth_call)",
+      "Gas Used": "0 (view fn, off-chain)",
+      "Note": "result=false"
+    }
+  ],
+  "scaling": [
+    {
+      "Test": "Register 1 objects",
+      "Total ms": 76,
+      "Avg ms": "76.00"
+    },
+    {
+      "Test": "Register 5 objects",
+      "Total ms": 304,
+      "Avg ms": "60.80"
+    },
+    {
+      "Test": "Register 10 objects",
+      "Total ms": 633,
+      "Avg ms": "63.30"
+    },
+    {
+      "Test": "Register 20 objects",
+      "Total ms": 1135,
+      "Avg ms": "56.75"
+    },
+    {
+      "Test": "Register 50 objects",
+      "Total ms": 2985,
+      "Avg ms": "59.70"
+    },
+    {
+      "Test": "Grant to 1 users",
+      "Total ms": 124,
+      "Avg ms": "124.00"
+    },
+    {
+      "Test": "Grant to 5 users",
+      "Total ms": 398,
+      "Avg ms": "79.60"
+    },
+    {
+      "Test": "Grant to 9 users",
+      "Total ms": 804,
+      "Avg ms": "89.33"
+    },
+    {
+      "Test": "Grant -> Revoke -> Re-grant",
+      "Total ms": 228,
+      "Avg ms": "-"
+    }
+  ]
 }

@@ -1,0 +1,37 @@
+[
+  {
+    "File Size (MB)": 1,
+    "Encryption Time (ms)": 0.59,
+    "Encryption Std (ms)": 0.1,
+    "Decryption Time (ms)": 0.59,
+    "Decryption Std (ms)": 0.09
+  },
+  {
+    "File Size (MB)": 5,
+    "Encryption Time (ms)": 2.95,
+    "Encryption Std (ms)": 0.69,
+    "Decryption Time (ms)": 2.86,
+    "Decryption Std (ms)": 0.63
+  },
+  {
+    "File Size (MB)": 10,
+    "Encryption Time (ms)": 5.95,
+    "Encryption Std (ms)": 0.97,
+    "Decryption Time (ms)": 5.85,
+    "Decryption Std (ms)": 0.9
+  },
+  {
+    "File Size (MB)": 25,
+    "Encryption Time (ms)": 15.61,
+    "Encryption Std (ms)": 0.88,
+    "Decryption Time (ms)": 15.59,
+    "Decryption Std (ms)": 1.87
+  },
+  {
+    "File Size (MB)": 50,
+    "Encryption Time (ms)": 29.2,
+    "Encryption Std (ms)": 2.8,
+    "Decryption Time (ms)": 29.42,
+    "Decryption Std (ms)": 3.12
+  }
+]

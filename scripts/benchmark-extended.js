@@ -1,10 +1,3 @@
-/**
- * Real measured gas costs for the 4 functions added to fully back every row
- * of the paper's Table 5 with empirical data (previously these had no
- * implementation at all): registerUser, assignRole, updatePolicy, logAccess.
- *
- * Run: node scripts/benchmark-extended.js
- */
 const fs = require("fs");
 const path = require("path");
 const ethers = require("ethers");
@@ -14,15 +7,17 @@ async function main() {
   const ganacheProvider = Ganache.provider({
     wallet: { totalAccounts: 5, defaultBalance: 100 },
     logging: { quiet: true },
+    blockTime: 2,
   });
   const provider = new ethers.BrowserProvider(ganacheProvider);
   const accounts = await provider.send("eth_accounts", []);
-  const owner = await provider.getSigner(accounts[0]); // also acts as admin (deployer)
+  const owner = await provider.getSigner(accounts[0]);
   const alice = await provider.getSigner(accounts[1]);
 
   const artifact = JSON.parse(
     fs.readFileSync(path.join(__dirname, "..", "build", "BDCSAC_AccessControl.json"), "utf8")
   );
+
   const factory = new ethers.ContractFactory(artifact.abi, artifact.bytecode, owner);
   const contract = await factory.deploy();
   await contract.waitForDeployment();
@@ -34,49 +29,54 @@ async function main() {
   }
 
   const results = [];
+  const h = ethers.keccak256(ethers.toUtf8Bytes("extended-bench"));
 
-  // --- registerUser ---
-  const didHash = ethers.keccak256(ethers.toUtf8Bytes("did:bdcsac:alice"));
-  const pubKeyHash = ethers.keccak256(ethers.toUtf8Bytes("alice-pubkey"));
-  let tx = await withGas(contract.connect(alice).registerUser, [accounts[1], didHash, pubKeyHash]);
+  // registerUser
+  let tx = await withGas(contract.registerUser, [accounts[1], h, h]);
   let receipt = await tx.wait();
   results.push({ Function: "registerUser", "Gas Used": receipt.gasUsed.toString() });
 
-  // --- assignRole (admin-only; owner == admin since owner deployed the contract) ---
-  tx = await withGas(contract.assignRole, [accounts[1], 1]); // role 1 = "auditor", arbitrary app-defined ID
+  // assignRole
+  tx = await withGas(contract.assignRole, [accounts[1], 2]);
   receipt = await tx.wait();
   results.push({ Function: "assignRole", "Gas Used": receipt.gasUsed.toString() });
 
-  // --- registerObject (needed before updatePolicy) ---
-  const contentHash = ethers.keccak256(ethers.toUtf8Bytes("ext-bench-object"));
-  tx = await withGas(contract.registerObject, [contentHash]);
+  // registerObject
+  tx = await withGas(contract.registerObject, [h, h, h, h]);
   receipt = await tx.wait();
+  results.push({ Function: "registerObject", "Gas Used": receipt.gasUsed.toString() });
   const objectId = 1;
 
-  // --- updatePolicy ---
-  const newPolicyHash = ethers.keccak256(ethers.toUtf8Bytes("policy-v2"));
-  tx = await withGas(contract.updatePolicy, [objectId, newPolicyHash]);
+  // updatePolicy
+  const newPolicy = ethers.keccak256(ethers.toUtf8Bytes("new-policy"));
+  tx = await withGas(contract.updatePolicy, [objectId, newPolicy]);
   receipt = await tx.wait();
   results.push({ Function: "updatePolicy", "Gas Used": receipt.gasUsed.toString() });
 
-  // --- logAccess (standalone audit write, separate from checkAccess's event) ---
+  // logAccess
   tx = await withGas(contract.connect(alice).logAccess, [objectId, true]);
   receipt = await tx.wait();
   results.push({ Function: "logAccess", "Gas Used": receipt.gasUsed.toString() });
 
-  console.log("=== B-DCSAC Extended Functions - Real Measured Gas Costs ===\n");
+  // getAuditEntry (view)
+  const entry = await contract.getAuditEntry(0);
+  results.push({ Function: "getAuditEntry (view)", "Gas Used": "0", "Note": `decision=${entry[2]}` });
+
+  // auditLogLength (view)
+  const len = await contract.auditLogLength();
+  results.push({ Function: "auditLogLength (view)", "Gas Used": "0", "Note": `length=${len}` });
+
+  console.log("=== Extended Functions Gas Costs ===\n");
   console.table(results);
 
-  // Merge with the core benchmark-results.json so one file has all 8 Table 5 rows
-  const corePath = path.join(__dirname, "..", "benchmark-results.json");
-  const core = JSON.parse(fs.readFileSync(corePath, "utf8"));
-  const merged = {
-    ...core,
-    extendedFunctions: results,
-    note: "Core results[] covers registerObject/grantAccess/revokeAccess/checkAccess (the original gateway-facing functions). extendedFunctions[] covers registerUser/assignRole/updatePolicy/logAccess, added specifically to give every row of the paper's Table 5 a real measured value instead of an analytical estimate.",
-  };
-  fs.writeFileSync(corePath, JSON.stringify(merged, null, 2));
-  console.log("\nMerged into benchmark-results.json");
+  const outPath = path.join(__dirname, "..", "benchmark-results.json");
+  let existing = {};
+  if (fs.existsSync(outPath)) {
+    existing = JSON.parse(fs.readFileSync(outPath, "utf8"));
+  }
+  existing.extended = results;
+  fs.writeFileSync(outPath, JSON.stringify(existing, null, 2));
+  console.log("\nAppended to benchmark-results.json");
 
   await ganacheProvider.disconnect();
 }

@@ -1,0 +1,6 @@
+File Size (MB),Encryption Time (ms),Encryption Std (ms),Decryption Time (ms),Decryption Std (ms)
+1,0.59,0.1,0.59,0.09
+5,2.95,0.69,2.86,0.63
+10,5.95,0.97,5.85,0.9
+25,15.61,0.88,15.59,1.87
+50,29.2,2.8,29.42,3.12

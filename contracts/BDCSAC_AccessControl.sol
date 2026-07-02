@@ -1,40 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/**
- * @title BDCSAC_AccessControl
- * @notice On-chain access-control registry for the Blockchain-based Decentralized
- *         Cloud Storage with Smart Contract Access Control (B-DCSAC) framework.
- *
- * Design notes (matches the architecture described in the paper):
- *  - Each stored object is represented on-chain only by its content hash / CID
- *    (the off-chain ciphertext lives in decentralized storage, e.g. IPFS).
- *    No file content ever touches the chain — only metadata + access policy.
- *  - Access is capability-based: the owner grants a (subject, objectId) pair
- *    a permission level and an optional expiry. checkAccess() is the function
- *    a storage gateway calls before releasing a decryption capability/CID.
- *  - CP-ABE / encryption itself stays off-chain (interface-only on-chain, as
- *    disclosed in the paper) — this contract enforces *authorization*, not
- *    cryptographic key management.
- */
 contract BDCSAC_AccessControl {
     enum Permission { NONE, READ, WRITE, ADMIN }
 
     struct ObjectRecord {
         address owner;
-        bytes32 contentHash;   // hash/CID of the off-chain encrypted object
+        bytes32 cidHash;
+        bytes32 contentHash;
+        bytes32 policyHash;
+        bytes32 keyRef;
         uint256 registeredAt;
         bool exists;
     }
 
     struct Grant {
         Permission permission;
-        uint256 expiresAt;     // 0 = never expires
+        uint256 expiresAt;
         bool revoked;
     }
-
-    uint256 private objectCounter;
-    address public immutable admin; // deployer; used for assignRole authorization
 
     struct UserRecord {
         bytes32 didHash;
@@ -49,36 +33,52 @@ contract BDCSAC_AccessControl {
         uint256 timestamp;
     }
 
-    mapping(uint256 => ObjectRecord) public objects;                 // objectId => record
-    mapping(uint256 => mapping(address => Grant)) private grants;    // objectId => subject => grant
-    mapping(uint256 => address[]) private grantees;                  // objectId => list of subjects ever granted
-    mapping(uint256 => mapping(address => bool)) private hasBeenGranted; // objectId => subject => ever appended to grantees[]
-    // ^ O(1) duplicate check for the grantees[] append below. Earlier version of this
-    // contract scanned the full grantees[] array on every grantAccess call to avoid
-    // duplicate entries — that made each grant cost O(n) gas (n = existing grantee
-    // count), so granting access to n total subjects cost O(n^2) cumulative gas.
-    // Measured before fix: grant #1 cost 101,440 gas, grant #100 cost 321,537 gas
-    // (3.2x). This mapping makes every grantAccess call O(1) regardless of how many
-    // grantees an object already has.
+    struct TokenRecord {
+        uint256 objectId;
+        address subject;
+        Permission permission;
+        bytes32 nonce;
+        uint256 issuedAt;
+        uint256 expiresAt;
+        uint256 policyVersionAtIssuance;
+        bool consumed;
+        bool revoked;
+    }
 
-    mapping(address => UserRecord) public users;          // addr => identity record
-    mapping(address => uint8) public roles;                // addr => role ID (admin-assigned)
-    mapping(uint256 => uint256) public policyVersion;       // objectId => current policy version
-    mapping(uint256 => bytes32) public policyHash;          // objectId => current policy digest
-    AuditEntry[] private auditLog;                          // append-only audit trail (separate from event logs)
+    uint256 private objectCounter;
+    uint256 private tokenCounter;
+    address public immutable admin;
+
+    mapping(uint256 => ObjectRecord) public objects;
+    mapping(uint256 => mapping(address => Grant)) private grants;
+    mapping(uint256 => address[]) private grantees;
+    mapping(uint256 => mapping(address => bool)) private hasBeenGranted;
+
+    mapping(address => UserRecord) public users;
+    mapping(address => uint8) public roles;
+    mapping(uint256 => uint256) public policyVersion;
+    mapping(uint256 => bytes32) public policyHash;
+    AuditEntry[] private auditLog;
+
+    mapping(uint256 => TokenRecord) public tokens;
+    mapping(bytes32 => bool) private usedNonces;
 
     constructor() {
         admin = msg.sender;
     }
 
-    event ObjectRegistered(uint256 indexed objectId, address indexed owner, bytes32 contentHash, uint256 timestamp);
-    event AccessGranted(uint256 indexed objectId, address indexed owner, address indexed subject, Permission permission, uint256 expiresAt);
-    event AccessRevoked(uint256 indexed objectId, address indexed owner, address indexed subject);
-    event AccessChecked(uint256 indexed objectId, address indexed subject, bool granted);
+    event ObjectRegistered(uint256 indexed objectId, address indexed owner, bytes32 cidHash, bytes32 contentHash, bytes32 policyHash, bytes32 keyRef, uint256 timestamp);
+    event PermissionGranted(uint256 indexed objectId, address indexed owner, address indexed subject, Permission permission, uint256 expiresAt);
+    event PermissionRevoked(uint256 indexed objectId, address indexed owner, address indexed subject);
+    event AccessValidated(uint256 indexed objectId, address indexed subject);
+    event AccessDenied(uint256 indexed objectId, address indexed subject);
     event UserRegistered(address indexed addr, bytes32 didHash, bytes32 publicKeyHash, uint256 timestamp);
     event RoleAssigned(address indexed addr, uint8 role, address indexed assignedBy);
     event PolicyUpdated(uint256 indexed objectId, bytes32 newPolicyHash, uint256 newVersion);
     event AccessLogged(uint256 indexed objectId, address indexed requester, bool decision, uint256 timestamp);
+    event TokenIssued(uint256 indexed tokenId, uint256 indexed objectId, address indexed subject, Permission permission, bytes32 nonce, uint256 expiresAt);
+    event TokenConsumed(uint256 indexed tokenId, uint256 indexed objectId, address indexed subject);
+    event TokenRevoked(uint256 indexed tokenId, address indexed revokedBy);
 
     modifier onlyOwner(uint256 objectId) {
         require(objects[objectId].exists, "BDCSAC: object does not exist");
@@ -86,29 +86,26 @@ contract BDCSAC_AccessControl {
         _;
     }
 
-    /**
-     * @notice Register a new storage object on-chain.
-     * @param contentHash keccak256 hash (or CID-derived hash) of the encrypted object.
-     * @return objectId the newly assigned object identifier.
-     */
-    function registerObject(bytes32 contentHash) external returns (uint256 objectId) {
+    function registerObject(
+        bytes32 cidHash,
+        bytes32 contentHash,
+        bytes32 initialPolicyHash,
+        bytes32 keyRef
+    ) external returns (uint256 objectId) {
         objectId = ++objectCounter;
         objects[objectId] = ObjectRecord({
             owner: msg.sender,
+            cidHash: cidHash,
             contentHash: contentHash,
+            policyHash: initialPolicyHash,
+            keyRef: keyRef,
             registeredAt: block.timestamp,
             exists: true
         });
-        emit ObjectRegistered(objectId, msg.sender, contentHash, block.timestamp);
+        policyHash[objectId] = initialPolicyHash;
+        emit ObjectRegistered(objectId, msg.sender, cidHash, contentHash, initialPolicyHash, keyRef, block.timestamp);
     }
 
-    /**
-     * @notice Grant a subject a permission level on an object, with optional expiry.
-     * @param objectId the object to grant access to.
-     * @param subject the address receiving access.
-     * @param permission the permission level (READ/WRITE/ADMIN).
-     * @param expiresAt unix timestamp after which the grant is no longer valid (0 = never).
-     */
     function grantAccess(
         uint256 objectId,
         address subject,
@@ -129,25 +126,19 @@ contract BDCSAC_AccessControl {
             revoked: false
         });
 
-        emit AccessGranted(objectId, msg.sender, subject, permission, expiresAt);
+        emit PermissionGranted(objectId, msg.sender, subject, permission, expiresAt);
     }
 
-    /**
-     * @notice Revoke a previously granted access right.
-     */
     function revokeAccess(uint256 objectId, address subject) external onlyOwner(objectId) {
         require(grants[objectId][subject].permission != Permission.NONE, "BDCSAC: no active grant");
         grants[objectId][subject].revoked = true;
         grants[objectId][subject].permission = Permission.NONE;
-        emit AccessRevoked(objectId, msg.sender, subject);
+        emit PermissionRevoked(objectId, msg.sender, subject);
     }
 
-    /**
-     * @notice View-only access check (no event, no gas cost off-chain via .call).
-     */
     function hasAccess(uint256 objectId, address subject, Permission required) public view returns (bool) {
         if (!objects[objectId].exists) return false;
-        if (objects[objectId].owner == subject) return true; // owner always has full access
+        if (objects[objectId].owner == subject) return true;
 
         Grant memory g = grants[objectId][subject];
         if (g.revoked || g.permission == Permission.NONE) return false;
@@ -155,21 +146,20 @@ contract BDCSAC_AccessControl {
         return uint8(g.permission) >= uint8(required);
     }
 
-    /**
-     * @notice State-changing access check that emits an auditable on-chain event.
-     *         This is the function a storage gateway would call before serving
-     *         a decryption capability — gives an immutable audit trail.
-     */
     function checkAccess(uint256 objectId, Permission required) external returns (bool granted) {
         granted = hasAccess(objectId, msg.sender, required);
-        emit AccessChecked(objectId, msg.sender, granted);
+        if (granted) {
+            emit AccessValidated(objectId, msg.sender);
+        } else {
+            emit AccessDenied(objectId, msg.sender);
+        }
         return granted;
     }
 
-    function getObject(uint256 objectId) external view returns (address owner, bytes32 contentHash, uint256 registeredAt) {
+    function getObject(uint256 objectId) external view returns (address owner, bytes32 cidHash, bytes32 contentHash, bytes32 objPolicyHash, bytes32 keyRef, uint256 registeredAt) {
         require(objects[objectId].exists, "BDCSAC: object does not exist");
         ObjectRecord memory o = objects[objectId];
-        return (o.owner, o.contentHash, o.registeredAt);
+        return (o.owner, o.cidHash, o.contentHash, o.policyHash, o.keyRef, o.registeredAt);
     }
 
     function getGrant(uint256 objectId, address subject) external view returns (Permission permission, uint256 expiresAt, bool revoked) {
@@ -185,21 +175,12 @@ contract BDCSAC_AccessControl {
         return objectCounter;
     }
 
-    /**
-     * @notice Binds a blockchain address to an off-chain identity digest and
-     *         public key hash. Mirrors Table 5's registerUser row in the paper
-     *         (sign-up / identity-binding step prior to role assignment).
-     */
     function registerUser(address addr, bytes32 didHash, bytes32 publicKeyHash) external {
         require(addr != address(0), "BDCSAC: invalid address");
         users[addr] = UserRecord({ didHash: didHash, publicKeyHash: publicKeyHash, registered: true });
         emit UserRegistered(addr, didHash, publicKeyHash, block.timestamp);
     }
 
-    /**
-     * @notice Admin-only role assignment, mirrors Table 5's assignRole row.
-     *         Role IDs are application-defined (e.g. 0=user, 1=auditor, 2=admin).
-     */
     function assignRole(address addr, uint8 role) external {
         require(msg.sender == admin, "BDCSAC: only admin can assign roles");
         require(users[addr].registered, "BDCSAC: user not registered");
@@ -207,27 +188,12 @@ contract BDCSAC_AccessControl {
         emit RoleAssigned(addr, role, msg.sender);
     }
 
-    /**
-     * @notice Updates an object's policy digest and increments its policy
-     *         version, mirrors Table 5's updatePolicy row. A version bump
-     *         is what the paper's token-based model uses to invalidate
-     *         previously issued access tokens after a policy change.
-     */
     function updatePolicy(uint256 objectId, bytes32 newPolicyHash) external onlyOwner(objectId) {
         policyHash[objectId] = newPolicyHash;
         policyVersion[objectId] += 1;
         emit PolicyUpdated(objectId, newPolicyHash, policyVersion[objectId]);
     }
 
-    /**
-     * @notice Standalone immutable audit-log write, mirrors Table 5's logAccess
-     *         row. Distinct from checkAccess: checkAccess validates AND emits
-     *         a lightweight event in one call (what the gateway uses in
-     *         practice for efficiency); logAccess is the explicit storage-array
-     *         audit write described separately in the paper's Section 8 design,
-     *         benchmarked here as its own function so its gas cost isn't
-     *         conflated with validation.
-     */
     function logAccess(uint256 objectId, bool decision) external returns (uint256 logIndex) {
         auditLog.push(AuditEntry({
             objectId: objectId,
@@ -246,5 +212,80 @@ contract BDCSAC_AccessControl {
 
     function auditLogLength() external view returns (uint256) {
         return auditLog.length;
+    }
+
+    function issueToken(
+        uint256 objectId,
+        address subject,
+        Permission permission,
+        bytes32 nonce,
+        uint256 expiresAt
+    ) external onlyOwner(objectId) returns (uint256 tokenId) {
+        require(subject != address(0), "BDCSAC: invalid subject");
+        require(permission != Permission.NONE, "BDCSAC: invalid permission");
+        require(!usedNonces[nonce], "BDCSAC: nonce already used");
+        require(expiresAt > block.timestamp, "BDCSAC: expiry must be in the future");
+
+        usedNonces[nonce] = true;
+        tokenId = ++tokenCounter;
+
+        tokens[tokenId] = TokenRecord({
+            objectId: objectId,
+            subject: subject,
+            permission: permission,
+            nonce: nonce,
+            issuedAt: block.timestamp,
+            expiresAt: expiresAt,
+            policyVersionAtIssuance: policyVersion[objectId],
+            consumed: false,
+            revoked: false
+        });
+
+        emit TokenIssued(tokenId, objectId, subject, permission, nonce, expiresAt);
+    }
+
+    function consumeToken(uint256 tokenId) external returns (bool granted) {
+        TokenRecord storage t = tokens[tokenId];
+        require(t.issuedAt != 0, "BDCSAC: token does not exist");
+        require(t.subject == msg.sender, "BDCSAC: caller is not the token subject");
+        require(!t.consumed, "BDCSAC: token already consumed");
+        require(!t.revoked, "BDCSAC: token has been revoked");
+        require(t.expiresAt >= block.timestamp, "BDCSAC: token expired");
+        require(
+            t.policyVersionAtIssuance == policyVersion[t.objectId],
+            "BDCSAC: policy changed after token was issued"
+        );
+
+        t.consumed = true;
+        emit TokenConsumed(tokenId, t.objectId, msg.sender);
+        emit AccessValidated(t.objectId, msg.sender);
+        return true;
+    }
+
+    function revokeToken(uint256 tokenId) external {
+        TokenRecord storage t = tokens[tokenId];
+        require(t.issuedAt != 0, "BDCSAC: token does not exist");
+        require(
+            objects[t.objectId].owner == msg.sender || msg.sender == admin,
+            "BDCSAC: only object owner or admin can revoke tokens"
+        );
+        require(!t.consumed, "BDCSAC: cannot revoke consumed token");
+        t.revoked = true;
+        emit TokenRevoked(tokenId, msg.sender);
+    }
+
+    function isTokenValid(uint256 tokenId, address subject) external view returns (bool) {
+        TokenRecord memory t = tokens[tokenId];
+        if (t.issuedAt == 0) return false;
+        if (t.subject != subject) return false;
+        if (t.consumed) return false;
+        if (t.revoked) return false;
+        if (t.expiresAt < block.timestamp) return false;
+        if (t.policyVersionAtIssuance != policyVersion[t.objectId]) return false;
+        return true;
+    }
+
+    function totalTokens() external view returns (uint256) {
+        return tokenCounter;
     }
 }

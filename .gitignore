@@ -1,2 +1,4 @@
 node_modules/
 build/
+gateway/off-chain-store/
+*.docx

@@ -1,19 +1,29 @@
 {
   "name": "bdcsac",
   "version": "1.0.0",
-  "private": true,
+  "description": "",
+  "main": "index.js",
   "scripts": {
     "compile": "node scripts/compile.js",
     "benchmark": "node scripts/benchmark.js",
+    "benchmark-extended": "node scripts/benchmark-extended.js",
+    "benchmark-token": "node scripts/benchmark-token.js",
     "demo": "node gateway/demo.js",
     "edge-cases": "node gateway/edge-cases.js",
-    "scaling": "node gateway/scaling-and-reuse.js",
-    "benchmark-extended": "node scripts/benchmark-extended.js",
-    "edge-cases-extended": "node gateway/edge-cases-extended.js"
+    "edge-cases-extended": "node gateway/edge-cases-extended.js",
+    "edge-cases-token": "node gateway/edge-cases-token.js",
+    "scaling": "node gateway/scaling-and-reuse.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.28.0"
   },
   "dependencies": {
-    "ethers": "^6.0.0",
-    "ganache": "^7.0.0",
-    "solc": "0.8.20"
+    "ethers": "^6.17.0",
+    "ganache": "^7.9.2",
+    "solc": "^0.8.20"
   }
 }
